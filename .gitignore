@@ -21,3 +21,7 @@ ENV/
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# Downloaded fonts and rendered output
+visibilities/fonts/
+renders/
