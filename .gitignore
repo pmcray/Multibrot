@@ -25,3 +25,4 @@ Thumbs.db
 # Downloaded fonts and rendered output
 visibilities/fonts/
 renders/
+visibilities/cache/

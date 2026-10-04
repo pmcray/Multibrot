@@ -93,3 +93,63 @@ width of about 1e-12.
 * `cover.py`: the cover layout (frame, corner roundels {d/3} with the
   (d−1)-gon inside, seal, title cartouche).
 * `specimens.py`: the named mini-forts.
+
+## The wrap-around case: joining the Heptabrot and the Octabrot
+
+The Heptabrot and the Octabrot *can* be joined seamlessly. A fractional
+power such as z^7.5 does tear the picture, but only because it needs a
+branch cut. The join does not need fractional powers. `bridge.py` uses the
+family
+
+    f_t(z) = (1 − t) z⁷ + t z⁸ + c        (t = 0 Heptabrot, t = 1 Octabrot)
+
+Every point iterates an ordinary polynomial, so there is no branch cut, and
+the picture depends continuously on t. The family has a second critical
+point, z* = −7(1 − t)/(8t). As t → 1 it comes in from infinity and merges
+with z = 0, and that merger is when the eighth fold is born.
+
+**The same creature on both boards.** Newton's method on f_t^p(0) = 0
+follows a fort's nucleus through the family. The front fort,
+`hepta-snowflake` (period 10, hexagonal, 7 arms), stays a period-10 fort all
+the way to t = 1 and ends up heptagonal with 8 arms, at about the same size.
+See `gallery/transfiguration_*.png`. On these strips the eighth arm appears
+between t ≈ 0.55 and 0.7.
+
+**The case** (`jacket.py`, default `--mode pair`) is one flat, conformal
+plate. Fort A is on the front at t = 0. A carried to t = 1 sits in the arms
+of a large period-7 heptagonal Octabrot fort, B, which takes the back. A
+gentle steady zoom and twist across the jacket (exp(−λζ) with complex λ)
+put B at the centre of the back board with an arm pointing up. There is no
+singular point anywhere. t goes from 0 at the front fort's centre to 1 at
+the back fort's centre. It is spaced by the measured rate of change of the
+picture (`bridge.stabilise`), so the burst of change around t ≈ 0.55 is
+spread out rather than crammed into one place.
+
+```bash
+python -m visibilities.jacket --blend 3.1 --dpi 150 --guides --out jacket.png
+#   --board 6.25x9.5 --spine 1.25 --wrap 0.75   (inches; set to the real case)
+#   --zoom (front fort sizes per inch)  --back-radius (back fort radius, in)
+```
+
+What happens at the spine, and why. The two forts drift relative to each
+other as t changes: a tiny fort moves tens of thousands of its own sizes
+between t = 0 and t = 1. Multibrot sets are connected, so filaments must
+cross any line drawn between the two forts. Those filaments are therefore
+combed out into a flowing, marbled current across the spine. It is
+continuous: a sweep, not a tear. Two other layouts were tried and are kept
+for reference:
+
+* `--mode infinity`: the spine is the point at infinity.
+* `--mode branch`: the spine is a branch point.
+
+Mathematically, if both boards show the same fort, the spine *must* contain
+one or the other (Riemann–Hurwitz). Both magnify the spine strongly, and
+the change of t then streaks it (`gallery/rejected_infinity_spine.png`).
+
+Large forts (the period-3 islands) drift only 5–14 of their own sizes. They
+would give a nearly invisible join, but they have much less filigree than
+the deep forts.
+
+Still to do: extra horizontal supersampling in the transition zone, to clean
+up ladder-like aliasing on the most swept filaments, and a tiled renderer so
+that a 300 dpi run of the full case fits in memory.
