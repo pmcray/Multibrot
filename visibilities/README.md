@@ -115,21 +115,43 @@ the way to t = 1 and ends up heptagonal with 8 arms, at about the same size.
 See `gallery/transfiguration_*.png`. On these strips the eighth arm appears
 between t ≈ 0.55 and 0.7.
 
-**The case** (`jacket.py`, default `--mode pair`) is one flat, conformal
-plate. Fort A is on the front at t = 0. A carried to t = 1 sits in the arms
-of a large period-7 heptagonal Octabrot fort, B, which takes the back. A
-gentle steady zoom and twist across the jacket (exp(−λζ) with complex λ)
-put B at the centre of the back board with an arm pointing up. There is no
-singular point anywhere. t goes from 0 at the front fort's centre to 1 at
-the back fort's centre. It is spaced by the measured rate of change of the
-picture (`bridge.stabilise`), so the burst of change around t ≈ 0.55 is
-spread out rather than crammed into one place.
+**The dust-wrapper** (`jacket.py`, default `--mode pair`) is one flat,
+conformal plate. Fort A is on the front at t = 0. A carried to t = 1 sits in
+the arms of a large period-7 heptagonal Octabrot fort, B, which takes the
+back. A gentle steady zoom and twist across the wrapper (exp(−λζ) with
+complex λ) puts B at the centre of the back board with an arm pointing up.
+There is no singular point anywhere. t goes from 1 at the back fort to 0 at
+the front fort and is constant beyond them, so the flaps are pure Octabrot
+(back) and pure Heptabrot (front). It is spaced by the measured rate of
+change of the picture (`bridge.stabilise`), so the burst of change around
+t ≈ 0.55 is spread out rather than crammed into one place.
+
+Default geometry (`WrapperSpec`, all in mm), for the 784-page Royal Octavo
+hardback: 70 gsm volume 1.5 paper (41.6 mm block), 2.5 mm boards, 3 mm
+squares.
+
+| back flap | turn | back panel | spine | front panel | turn | front flap |
+|---|---|---|---|---|---|---|
+| 150 | 4 | 164 | 48 | 164 | 4 | 150 |
+
+That is 684 × 241 mm trimmed, 694 × 251 mm with 5 mm bleed. Each fort is
+centred on its *board* rather than its wrapper panel: the board starts a
+joint (7 mm) from the spine fold, so the front fort sits over the
+blind-blocked AR device. Fort centres are at 232.5 and 451.5 mm from the
+left trim edge, 120.5 mm from the top.
 
 ```bash
-python -m visibilities.jacket --blend 3.1 --dpi 150 --guides --out jacket.png
-#   --board 6.25x9.5 --spine 1.25 --wrap 0.75   (inches; set to the real case)
-#   --zoom (front fort sizes per inch)  --back-radius (back fort radius, in)
+python -m visibilities.jacket --dpi 150 --guides --out wrapper.png   # proof with marks
+python -m visibilities.jacket --dpi 300 --out wrapper.png            # print (~4 min)
+#   --spine 48 (confirm from the binder's bulking dummy)  --flap --panel --height ...
+#   --front-radius 21  --back-radius 40   (fort radii on the wrapper, mm)
 ```
+
+Each run also writes `wrapper.json`, holding the folds, fort centres and
+sizes, for the printer and for placing the AR device in OpTeX/MetaPost.
+The picture is computed in strips, sharing one sheet of paper texture and
+one set of normalisations, so the strips join invisibly. A 300 dpi run
+takes about 4 minutes and 4 GB of memory on 4 cores.
 
 What happens at the spine, and why. The two forts drift relative to each
 other as t changes: a tiny fort moves tens of thousands of its own sizes
@@ -151,5 +173,4 @@ would give a nearly invisible join, but they have much less filigree than
 the deep forts.
 
 Still to do: extra horizontal supersampling in the transition zone, to clean
-up ladder-like aliasing on the most swept filaments, and a tiled renderer so
-that a 300 dpi run of the full case fits in memory.
+up ladder-like aliasing on the most swept filaments.

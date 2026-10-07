@@ -1,0 +1,31 @@
+{
+  "spec": {
+    "height": 241.0,
+    "panel": 164.0,
+    "spine": 48.0,
+    "flap": 150.0,
+    "turn": 4.0,
+    "bleed": 5.0,
+    "joint": 7.0,
+    "board": 157.0
+  },
+  "trim_width_mm": 684.0,
+  "with_bleed_mm": [
+    694.0,
+    251.0
+  ],
+  "folds_mm": {
+    "back_flap": 150.0,
+    "back_fore_edge": 154.0,
+    "back_spine": 318.0,
+    "front_spine": 366.0,
+    "front_fore_edge": 530.0,
+    "front_flap": 534.0
+  },
+  "fort_centres_mm": [
+    232.5,
+    451.5
+  ],
+  "fort_height_mm_from_top": 120.5,
+  "dpi": 300
+}

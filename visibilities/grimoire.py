@@ -125,7 +125,8 @@ def _smoothstep(e0, e1, x):
 
 
 def plate(fields, pix, pal_name="vellum", line=1.2, contour_every=1.0,
-          contour_alpha=0.55, hatch=0.35, wash=0.35, seed=7, paper=None):
+          contour_alpha=0.55, hatch=0.35, wash=0.35, seed=7, paper=None,
+          trap_scale=None, fill_tex=None):
     """
     fields   (mu, de, stripe, trap, period) from engine.render_fields
     pix      size of one pixel in the complex plane
@@ -173,8 +174,12 @@ def plate(fields, pix, pal_name="vellum", line=1.2, contour_every=1.0,
 
     # --- the fort itself: rubricated interior with a gilded rim
     f0, f1 = _hex(pal["fill"][0]), _hex(pal["fill"][1])
-    tt = np.clip(tr / (np.percentile(tr[inside], 95) + 1e-12), 0, 1) if inside.any() else tr
-    tex = fbm(h, w, max(h, w) / 80, 4, seed + 9)
+    # trap_scale / fill_tex let a picture rendered in strips share one
+    # normalisation and one texture, so the strips meet without seams
+    if trap_scale is None:
+        trap_scale = np.percentile(tr[inside], 95) if inside.any() else 1.0
+    tt = np.clip(tr / (trap_scale + 1e-12), 0, 1)
+    tex = fbm(h, w, max(h, w) / 80, 4, seed + 9) if fill_tex is None else fill_tex
     t = np.clip(0.6 * tt + 0.4 * tex, 0, 1)
     fill = f0[None, None, :] * (1 - t[..., None]) + f1[None, None, :] * t[..., None]
     img = np.where(inside[..., None], fill, img)

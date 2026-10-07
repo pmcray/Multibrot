@@ -1,58 +1,100 @@
 """
-A seamless wrap-around jacket: Octabrot on the back board, Heptabrot on the
-front, the same fort on both, joined across the spine.
+The dust-wrapper for The Visibilities: Octabrot on the back, Heptabrot on
+the front, joined seamlessly across the spine and carried on round both
+flaps.
 
-Layout (jacket laid flat, outside up):   back board | spine | front board
+Wrapper laid flat, outside up, left to right (all sizes in mm):
 
-Two things vary across the jacket.
+  back flap | turn | back panel | spine | front panel | turn | front flap
 
-1. The family parameter t (bridge.py): t = 1 (z^8 + c) on the back board,
-   t = 0 (z^7 + c) on the front, changing smoothly across the spine.
+The defaults (WrapperSpec) are for the 784-page Royal Octavo hardback:
+156 x 234 mm pages; 70 gsm, volume 1.5 paper (a 41.6 mm text block);
+2.5 mm boards with 3 mm squares; a 48 mm spine; 150 mm double-width flaps.
+Have the binder confirm the spine width from a bulking dummy, then pass
+--spine.
 
-2. Where each point of the jacket looks in the parameter plane.  The front
-   and back show the same fort (its nucleus tracked through t), so both
-   fort centres map to fort-relative position w = 0.  A smooth map that
-   sends two points to the same place, keeping shapes undistorted at both,
-   must have either a pole or a branch point between them (Riemann-Hurwitz).
+Two things vary across the wrapper.
 
-   mode="infinity"  w = (D/pi) tan(pi (zeta - zeta_back) / D)
-                    The spine is the point at infinity.  Out from each fort
-                    the view widens until, at the spine, it takes in the
-                    whole set and the calm field beyond it: a still eye where
-                    the lettering and the publisher's device can sit.
-   mode="branch"    w = (zeta - zeta_back)(zeta - zeta_front) / D
-                    The spine is a branch point.  The spine centre is a
-                    point near the fort, with angles there doubled; the back
-                    is the front turned through 180 degrees and re-made in 8.
+1. The family parameter t (bridge.py): t = 1 (z^8 + c) at the back fort,
+   t = 0 (z^7 + c) at the front fort, changing smoothly between them and
+   held constant beyond each fort (so the flaps are pure Octabrot and pure
+   Heptabrot).
 
-   Both of these magnify strongly at the spine, exactly where t changes,
-   and the change of t then drags the picture into streaks.  The default
-   avoids that:
+2. Where each point looks in the parameter plane.  The default, mode
+   "pair", is one flat plate with no singular point.  The front shows fort
+   A (Heptabrot, hexagonal, 7 arms); the back shows fort B, a heptagonal
+   Octabrot fort (8 arms) in whose arms A sits once carried to t = 1.  The
+   map
 
-   mode="pair"      One flat plate, no singular point.  The front shows fort
-                    A (Heptabrot); the back shows fort B, a heptagonal
-                    Octabrot fort in whose arms A sits once it has been
-                    carried to t = 1.  The map
-                        w = zoom (1 - exp(-lam (zeta - zeta_front))) / lam
-                    is conformal everywhere (shapes undistorted), with a
-                    gentle steady zoom across the jacket; complex lam lets
-                    B land on the back board's centre with an arm upright.
+        w = zoom (1 - exp(-lam (zeta - zeta_front))) / lam
+
+   is conformal everywhere (shapes undistorted), with a gentle steady zoom
+   and twist across the wrapper; complex lam puts B at the centre of the
+   back board with an arm upright.
+
+   If both boards showed the same fort, a smooth map would need a pole or
+   a branch point between them (Riemann-Hurwitz).  Those layouts are kept
+   for comparison as modes "infinity" (the spine is the point at infinity)
+   and "branch" (the spine is a branch point); both streak at the spine.
+
+Each fort is centred on its board, not its wrapper panel.  The board starts
+a joint's width from the spine fold, so its centre lies a few mm towards the
+fore-edge.  The front fort therefore sits over the AR device blind-blocked
+into the board.
 
 Run  python -m visibilities.jacket --help.
 """
 import argparse
+import json
 import math
 import os
 import time
+from dataclasses import dataclass, asdict
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
-from .bridge import TrackedFort, render_family, family_phase, dz_dc, stabilise
+from .bridge import TrackedFort, render_family, stabilise
 from .engine import find_nucleus, fort_geometry, fold_phase
-from .grimoire import plate, downsample, to_uint8, vellum, PALETTES
+from .grimoire import plate, downsample, to_uint8, vellum, fbm, PALETTES
 
 HERE = os.path.dirname(__file__)
+MM = 1 / 25.4                        # inches per mm (the maps work in inches)
+
+
+@dataclass
+class WrapperSpec:
+    """Dust-wrapper geometry in mm."""
+    height: float = 241.0       # board height 240 (234 + 2 x 3 squares) + 1
+    panel: float = 164.0        # board width 157 + joint ~7
+    spine: float = 48.0         # case spine 46.6 (41.6 block + 2 x 2.5 board) + ease
+    flap: float = 150.0         # double width
+    turn: float = 4.0           # wrap round the board's fore-edge
+    bleed: float = 5.0
+    joint: float = 7.0          # spine fold to the board's spine edge
+    board: float = 157.0        # board width (its centre is where the fort goes)
+
+    @property
+    def trim_width(self):
+        return 2 * (self.flap + self.turn + self.panel) + self.spine
+
+    def folds(self):
+        """x positions (mm from the left trim edge) of the four folds."""
+        a = self.flap
+        b = a + self.turn
+        c = b + self.panel
+        d = c + self.spine
+        e = d + self.panel
+        f = e + self.turn
+        return dict(back_flap=a, back_fore_edge=b, back_spine=c,
+                    front_spine=d, front_fore_edge=e, front_flap=f)
+
+    def fort_centres(self):
+        """x of the back and front fort centres: the centres of the boards."""
+        f = self.folds()
+        back = f["back_spine"] - self.joint - self.board / 2
+        front = f["front_spine"] + self.joint + self.board / 2
+        return back, front
 
 
 def smoothstep(e0, e1, x):
@@ -63,8 +105,8 @@ def smoothstep(e0, e1, x):
 def solve_pair(fort, B, pB, Dl, zoom, rB_in, grid=241):
     """
     Choose lam (complex, per inch) and the t = 1 frame F1 so that fort B,
-    of period pB, sits at the back board's centre with radius rB_in inches
-    and one of its 8 arms pointing up.  Returns (lam, F1).
+    of period pB, sits Dl inches left of the front fort with radius rB_in
+    inches and one of its 8 arms pointing up.  Returns (lam, F1).
     """
     A1 = fort.centre(1.0)
     sB, _ = fort_geometry(8, B, pB)
@@ -86,93 +128,129 @@ def solve_pair(fort, B, pB, Dl, zoom, rB_in, grid=241):
     return best[1], best[2]
 
 
-def jacket(fort, board=(6.25, 9.5), spine=1.25, wrap=0.75, dpi=100, ss=2,
-           zoom=1.2, mode="pair", blend=1.2, fort_y=0.5, palette="vellum",
-           max_iter=6000, B=None, pB=7, rB_in=1.6, verbose=True):
+def wrapper(fort, spec=WrapperSpec(), dpi=150, ss=2, front_radius=21.0,
+            back_radius=40.0, mode="pair", fort_y=0.5, palette="vellum",
+            max_iter=6000, B=None, pB=7, strip_rows=512, verbose=True):
     """
-    Render the whole case cover.  Sizes in inches.  'wrap' is the extra
-    material on every side that turns in over the board edges.  'zoom' is
-    fort sizes per inch at the front fort.  'blend' is how far either side
-    of the spine the 7 -> 8 change extends.  For mode="pair", B is the back
-    fort's nucleus (period pB) and rB_in its radius on the page.
-    """
-    bw, bh = board
-    Wi, Hi = 2 * bw + spine + 2 * wrap, bh + 2 * wrap
-    W, H = int(round(Wi * dpi)), int(round(Hi * dpi))
-    WS, HS = W * ss, H * ss
-    # jacket coordinates (inches), origin at the back fore-edge, y up
-    x = (np.arange(WS) + 0.5) / (dpi * ss) - wrap
-    y = (HS / 2 - np.arange(HS) - 0.5) / (dpi * ss) + (0.5 - fort_y) * bh
-    xb, xf = bw / 2, bw + spine + bw / 2
-    xm = bw + spine / 2
-    Dl = xf - xb
+    Render the whole dust-wrapper, bleed included, as an RGB array.
 
-    # t: 1 on the back, 0 on the front; spaced so the picture changes at an
-    # even rate (the eighth arm is born quickly, near t ~ 0.55)
-    s_col = smoothstep(xm - spine / 2 - blend, xm + spine / 2 + blend, x)
-    t_col = fort.t_of(1.0 - s_col)
+    front_radius / back_radius are the forts' radii on the wrapper in mm.
+    fort_y is the forts' height as a fraction of the trimmed height from the
+    top.  The picture is computed in horizontal strips of strip_rows
+    (supersampled) rows to bound memory; paper, texture and normalisation
+    are shared so the strips join invisibly.
+    """
+    Wmm = spec.trim_width + 2 * spec.bleed
+    Hmm = spec.height + 2 * spec.bleed
+    W, H = int(round(Wmm * MM * dpi)), int(round(Hmm * MM * dpi))
+    WS, HS = W * ss, H * ss
+    px_mm = 25.4 / (dpi * ss)
+
+    # wrapper coordinates in inches: x from the left trim edge, y up from
+    # the forts' line
+    x = ((np.arange(WS) + 0.5) * px_mm - spec.bleed) * MM
+    y0 = ((fort_y * spec.height) + spec.bleed) * MM
+    y = y0 - (np.arange(HS) + 0.5) * px_mm * MM
+    xb_mm, xf_mm = spec.fort_centres()
+    xb, xf = xb_mm * MM, xf_mm * MM
+    Dl = xf - xb
+    zoom = 1.0 / (front_radius * MM)            # fort sizes per inch, front
+
+    # t: 1 at the back fort, 0 at the front fort, constant beyond each; the
+    # spacing follows the measured rate of change of the picture
+    t_col = fort.t_of(1.0 - smoothstep(xb, xf, x))
 
     lam = None
     if mode == "pair":
-        lam, F1 = solve_pair(fort, B, pB, Dl, zoom, rB_in)
+        lam, F1 = solve_pair(fort, B, pB, Dl, zoom, back_radius * MM)
         fort.set_end_frame(F1)
         if verbose:
-            print(f"  pair: lam={lam:.4f}/in  zoom ratio across jacket "
+            print(f"  pair: lam={lam:.4f}/in  zoom ratio across wrapper "
                   f"{abs(np.exp(lam * Dl)):.2f}  twist {math.degrees(lam.imag * Dl):.1f} deg")
 
-    # per-column fort centre and frame
     tu, inv = np.unique(np.round(t_col, 6), return_inverse=True)
     cen = np.array([fort.centre(t) for t in tu])[inv]
     frm = np.array([fort.frame(t) for t in tu])[inv]
 
-    zeta = x[None, :] + 1j * y[:, None]
-    if mode == "pair":
-        e = np.exp(-lam * (zeta - xf))
-        w = zoom * (1 - e) / lam
-        dw = zoom * e
-    elif mode == "infinity":
-        w = zoom * (Dl / math.pi) * np.tan(math.pi * (zeta - xb) / Dl)
-        dw = zoom / np.cos(math.pi * (zeta - xb) / Dl) ** 2
-    elif mode == "branch":
-        w = zoom * (zeta - xb) * (zeta - xf) / Dl
-        dw = zoom * (2 * zeta - xb - xf) / Dl
-    else:
-        raise ValueError(mode)
-    C = cen[None, :] + frm[None, :] * w
-    T = np.broadcast_to(t_col[None, :], C.shape)
+    def strip_fields(r0, r1):
+        zeta = x[None, :] + 1j * y[r0:r1, None]
+        if mode == "pair":
+            e = np.exp(-lam * (zeta - xf))
+            w, dw = zoom * (1 - e) / lam, zoom * e
+        elif mode == "infinity":
+            w = zoom * (Dl / math.pi) * np.tan(math.pi * (zeta - xb) / Dl)
+            dw = zoom / np.cos(math.pi * (zeta - xb) / Dl) ** 2
+        elif mode == "branch":
+            w = zoom * (zeta - xb) * (zeta - xf) / Dl
+            dw = zoom * (2 * zeta - xb - xf) / Dl
+        else:
+            raise ValueError(mode)
+        C = cen[None, :] + frm[None, :] * w
+        T = np.ascontiguousarray(np.broadcast_to(t_col[None, :], C.shape), dtype=np.float64)
+        mu, de, s7, s8, tr = render_family(np.ascontiguousarray(C.real),
+                                           np.ascontiguousarray(C.imag),
+                                           T, max_iter, 1000.0)
+        pix = (np.abs(frm[None, :] * dw) / (dpi * ss)).astype(np.float32)
+        st = ((1 - T) * s7 + T * s8).astype(np.float32)
+        return mu, (de / pix).astype(np.float32), st, tr
 
+    # pass 1: the escape-time fields, strip by strip
     t0 = time.time()
-    mu, de, s7, s8, tr = render_family(np.ascontiguousarray(C.real),
-                                       np.ascontiguousarray(C.imag),
-                                       np.ascontiguousarray(T, dtype=np.float64),
-                                       max_iter, 1000.0)
-    st = (1 - T) * s7 + T * s8
-    # size of a pixel in c varies over the page: |dc/dzeta| / (dpi*ss)
-    pix = np.abs(frm[None, :] * dw) / (dpi * ss)
-    img = plate((mu, de / pix, st, tr, None), 1.0, palette, line=1.1 * ss)
-    img = downsample(img, ss)
+    strip_rows -= strip_rows % ss
+    mu = np.empty((HS, WS), np.float32)
+    dpx = np.empty_like(mu)
+    st = np.empty_like(mu)
+    tr = np.empty_like(mu)
+    for r0 in range(0, HS, strip_rows):
+        r1 = min(HS, r0 + strip_rows)
+        mu[r0:r1], dpx[r0:r1], st[r0:r1], tr[r0:r1] = strip_fields(r0, r1)
+        if verbose:
+            print(f"\r  fields {r1}/{HS} rows", end="", flush=True)
     if verbose:
-        print(f"  jacket {W}x{H} px ({Wi:.2f}x{Hi:.2f} in) mode={mode} "
-              f"in {time.time() - t0:.0f}s")
-    return to_uint8(img), dict(W=W, H=H, dpi=dpi, wrap=wrap, board=board,
-                               spine=spine)
+        print(f"  ({time.time() - t0:.0f}s)")
+
+    # pass 2: colour each strip with shared paper, texture and normalisation
+    pal = PALETTES[palette]
+    paper = vellum(H, W, pal, 7)                        # at output resolution
+    tex = fbm(H, W, max(H, W) / 80, 4, 16)
+    inside = mu < 0
+    trap_scale = float(np.percentile(tr[inside][::97], 95)) if inside.any() else 1.0
+    out = np.empty((H, W, 3), np.float32)
+    pad = 2 * ss                                        # for contour gradients
+    for r0 in range(0, HS, strip_rows):
+        r1 = min(HS, r0 + strip_rows)
+        a0, a1 = max(0, r0 - pad), min(HS, r1 + pad)
+        rows = slice(a0 // ss, (a1 + ss - 1) // ss)
+        up = lambda arr: np.repeat(np.repeat(arr[rows], ss, 0), ss, 1)[: a1 - a0, :WS]
+        img = plate((mu[a0:a1], dpx[a0:a1], st[a0:a1], tr[a0:a1], None), 1.0, palette,
+                    line=1.1 * ss, paper=up(paper), trap_scale=trap_scale,
+                    fill_tex=up(tex))
+        img = img[r0 - a0: r0 - a0 + (r1 - r0)]
+        out[r0 // ss: r1 // ss] = downsample(img, ss)
+    if verbose:
+        print(f"  wrapper {W}x{H} px ({Wmm:.0f}x{Hmm:.0f} mm incl. bleed, "
+              f"{dpi} dpi) mode={mode} in {time.time() - t0:.0f}s")
+    info = dict(W=W, H=H, dpi=dpi, spec=spec, fort_y=fort_y, lam=lam,
+                fort_centres_mm=(xb_mm, xf_mm))
+    return to_uint8(out), info
 
 
-def guides(arr, info, color=(40, 120, 200)):
-    """Draw trim/spine/fold guides (for proofs only)."""
-    from PIL import ImageDraw
+def guides(arr, info, color=(30, 110, 200)):
+    """Proof marks: trim and bleed (solid), folds (dashed), board centres."""
     im = Image.fromarray(arr)
     dr = ImageDraw.Draw(im)
-    d, wr = info["dpi"], info["wrap"]
-    bw, bh = info["board"]
-    sp = info["spine"]
-    xs = [wr, wr + bw, wr + bw + sp, wr + 2 * bw + sp]
-    for xi in xs:
-        X = int(xi * d)
-        dr.line((X, 0, X, info["H"]), fill=color, width=1)
-    for yi in (wr, wr + bh):
-        Y = int(yi * d)
-        dr.line((0, Y, info["W"], Y), fill=color, width=1)
+    spec, dpi = info["spec"], info["dpi"]
+    X = lambda mm: int(round((mm + spec.bleed) * MM * dpi))
+    Y = lambda mm: int(round((mm + spec.bleed) * MM * dpi))
+    tw, th = spec.trim_width, spec.height
+    dr.rectangle((X(0), Y(0), X(tw), Y(th)), outline=color, width=1)
+    for name, xm in spec.folds().items():
+        for y0 in range(0, info["H"], 12):
+            dr.line((X(xm), y0, X(xm), y0 + 6), fill=color, width=1)
+    fy = info["fort_y"] * th
+    for xm in info["fort_centres_mm"]:
+        dr.line((X(xm) - 10, Y(fy), X(xm) + 10, Y(fy)), fill=color)
+        dr.line((X(xm), Y(fy) - 10, X(xm), Y(fy) + 10), fill=color)
     return np.asarray(im)
 
 
@@ -182,26 +260,7 @@ SNOWFLAKE = dict(c=0.948646674202614 + 0.589594547258562j, period=10)
 OCTA_KEEP = dict(c=0.958143746042516 + 0.525108003889462j, period=7)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", default="pair", choices=["pair", "infinity", "branch"])
-    ap.add_argument("--back-radius", type=float, default=1.6,
-                    help="radius of the back fort on the page, inches (pair mode)")
-    ap.add_argument("--board", default="6.25x9.5")
-    ap.add_argument("--spine", type=float, default=1.25)
-    ap.add_argument("--wrap", type=float, default=0.75)
-    ap.add_argument("--dpi", type=int, default=100)
-    ap.add_argument("--ss", type=int, default=2)
-    ap.add_argument("--zoom", type=float, default=1.2,
-                    help="fort sizes per inch at the front fort")
-    ap.add_argument("--blend", type=float, default=1.2)
-    ap.add_argument("--fort-y", type=float, default=0.5)
-    ap.add_argument("--palette", default="vellum", choices=sorted(PALETTES))
-    ap.add_argument("--guides", action="store_true")
-    ap.add_argument("--out", default="jacket.png")
-    a = ap.parse_args()
-    bw, bh = (float(v) for v in a.board.split("x"))
+def load_fort():
     os.makedirs(os.path.join(HERE, "cache"), exist_ok=True)
     fort = TrackedFort(SNOWFLAKE["c"], SNOWFLAKE["period"],
                        cache=os.path.join(HERE, "cache", "snowflake_p10.npz"))
@@ -211,13 +270,44 @@ def main():
         np.savez(stab, **dict(zip(("ts", "corr", "resid"), stabilise(fort, 161))))
     st = np.load(stab)
     fort.use_stabilisation(st["ts"], st["corr"], st["resid"])
+    return fort
+
+
+def main():
+    d = WrapperSpec()
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--mode", default="pair", choices=["pair", "infinity", "branch"])
+    for k in ("height", "panel", "spine", "flap", "turn", "bleed", "joint", "board"):
+        ap.add_argument(f"--{k}", type=float, default=getattr(d, k), help=f"mm (default {getattr(d, k)})")
+    ap.add_argument("--front-radius", type=float, default=21.0, help="front fort radius, mm")
+    ap.add_argument("--back-radius", type=float, default=40.0, help="back fort radius, mm")
+    ap.add_argument("--fort-y", type=float, default=0.5, help="fort height, fraction from top")
+    ap.add_argument("--dpi", type=int, default=150)
+    ap.add_argument("--ss", type=int, default=2)
+    ap.add_argument("--palette", default="vellum", choices=sorted(PALETTES))
+    ap.add_argument("--guides", action="store_true", help="draw trim/fold marks (proofs only)")
+    ap.add_argument("--out", default="wrapper.png")
+    a = ap.parse_args()
+    spec = WrapperSpec(**{k: getattr(a, k) for k in asdict(d)})
+
+    folds = spec.folds()
+    print(f"  wrapper {spec.trim_width:.0f} x {spec.height:.0f} mm trimmed; "
+          f"folds at " + ", ".join(f"{v:.0f}" for v in folds.values()) + " mm")
+    fort = load_fort()
     B = find_nucleus(8, OCTA_KEEP["c"], OCTA_KEEP["period"])
-    arr, info = jacket(fort, (bw, bh), a.spine, a.wrap, a.dpi, a.ss, a.zoom,
-                       a.mode, a.blend, a.fort_y, a.palette, B=B,
-                       pB=OCTA_KEEP["period"], rB_in=a.back_radius)
+    arr, info = wrapper(fort, spec, a.dpi, a.ss, a.front_radius, a.back_radius,
+                        a.mode, a.fort_y, a.palette, B=B, pB=OCTA_KEEP["period"])
     if a.guides:
         arr = guides(arr, info)
     Image.fromarray(arr).save(a.out, dpi=(a.dpi, a.dpi))
+    # a sidecar with the geometry, for the printer and for the OpTeX side
+    side = dict(spec=asdict(spec), trim_width_mm=spec.trim_width,
+                with_bleed_mm=[spec.trim_width + 2 * spec.bleed, spec.height + 2 * spec.bleed],
+                folds_mm=folds, fort_centres_mm=info["fort_centres_mm"],
+                fort_height_mm_from_top=a.fort_y * spec.height, dpi=a.dpi)
+    with open(os.path.splitext(a.out)[0] + ".json", "w") as f:
+        json.dump(side, f, indent=2)
     print(f"  wrote {a.out}")
 
 
