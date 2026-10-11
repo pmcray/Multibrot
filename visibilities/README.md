@@ -174,3 +174,45 @@ the deep forts.
 
 Still to do: extra horizontal supersampling in the transition zone, to clean
 up ladder-like aliasing on the most swept filaments.
+
+## Luminous boards: deep forts in nested outworks
+
+This is the second look, following the 7th-power deep-zoom video. Each
+board shows a big black keep, large enough to hold the blind-blocked AR
+device, wrapped in rings of baroque outworks. The front is amaranth, the
+back is trifle.
+
+| | Front (Heptabrot) | Back (Octabrot) |
+|---|---|---|
+| Keep | hexagonal | heptagonal |
+| Outworks | seven-bastioned rampart, 7-fold rings | eight-pointed star rampart, 8 roundels |
+| Palette | `amaranth`: indigo, violet, amaranth, rose-white glow | `trifle`: sherry, sponge gold, custard, cream, raspberry |
+| Specimen | `hepta-citadel-deep` (period 283, size 5e-24) | `octa-star-deep` (period 291, size 4e-23) |
+
+**Why so deep.** The nested rings come from *iterated Julia morphing*
+(`deep.morph_path`). The search aims at a filament just outside a fort and
+finds a much smaller fort hidden there. That new fort is then surrounded by
+a ring echoing what was zoomed past. Doing this four times from a period-3
+island gives four rings. The forts end up near 1e-24, far below the 1e-13
+limit of ordinary double precision. `deep.py` renders them by
+*perturbation*: the fort's periodic orbit is computed once in high precision
+(mpmath), each pixel iterates only its tiny offset from that orbit, and the
+offset is "rebased" whenever the orbit passes the critical point. This
+matches the ordinary renderer exactly where both work.
+
+How far each ring sits from the keep depends on how much smaller each fort
+is than the one before. On the back, a shallower last step pulls the
+eight-fold rampart in close, to match the front.
+
+```bash
+python -m visibilities.panels front --dpi 100 --radius 34 --ar 36 --out front_proof.png
+python -m visibilities.panels back  --dpi 300 --radius 34 --out back.png
+#   --radius   the keep's nominal radius on the page, mm.  The solid black
+#              core is about 60% of this; 34 mm comfortably holds a 36 mm AR device
+#   --ar W     proof overlay of the AR device, W mm wide (never for print)
+#   --turn     extra rotation (degrees); a bastion points up by default
+#   --cycles / --phase   colour banding
+```
+
+The panels are 164 × 241 mm, the wrapper's panel size. The keep sits on the
+board's centre, 3.5 mm towards the fore-edge.

@@ -1,3 +1,5 @@
 numpy
 numba
 pillow
+mpmath
+gmpy2
